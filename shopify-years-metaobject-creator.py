@@ -198,11 +198,133 @@ def process_year(year, all_metaobjects):
         print(f"Successfully {action} metaobject for year {year}")
         return {"success": True, "result": result, "action": action}
 
+def get_metaobject_definition_by_type(type_name):
+    """
+    Verifica se existe uma definição de metaobjeto com o tipo especificado
+    """
+    # GraphQL query para buscar definições de metaobjetos
+    query = """
+    query {
+      metaobjectDefinitions(first: 100) {
+        edges {
+          node {
+            id
+            name
+            type
+            fieldDefinitions {
+              name
+              key
+              type {
+                name
+              }
+            }
+          }
+        }
+      }
+    }
+    """
+    
+    # Faz a requisição API
+    response = requests.post(
+        API_URL,
+        headers=HEADERS,
+        json={"query": query}
+    )
+    
+    data = response.json()
+    
+    if "data" in data and "metaobjectDefinitions" in data["data"]:
+        definitions = data["data"]["metaobjectDefinitions"]["edges"]
+        for definition in definitions:
+            if definition["node"]["type"] == type_name:
+                return definition["node"]
+    
+    return None
+
+def create_metaobject_definition():
+    """
+    Cria uma definição de metaobjeto para 'years' se não existir
+    """
+    print("Verificando se a definição de metaobjeto 'years' já existe...")
+    
+    # Verifica se a definição já existe
+    definition = get_metaobject_definition_by_type("years")
+    if definition:
+        print(f"Definição de metaobjeto 'years' já existe com ID: {definition['id']}")
+        return True
+    
+    print("Definição de metaobjeto 'years' não encontrada. Criando nova definição...")
+    
+    # GraphQL mutation para criar definição de metaobjeto
+    mutation = """
+    mutation metaobjectDefinitionCreate($definition: MetaobjectDefinitionCreateInput!) {
+      metaobjectDefinitionCreate(definition: $definition) {
+        metaobjectDefinition {
+          id
+          name
+        }
+        userErrors {
+          field
+          message
+        }
+      }
+    }
+    """
+    
+    # Variáveis para a mutation
+    variables = {
+        "definition": {
+            "name": "Years",
+            "type": "years",
+            "fieldDefinitions": [
+                {
+                    "name": "Name",
+                    "key": "name",
+                    "type": "single_line_text_field",
+                    "validations": {
+                        "required": True
+                    }
+                }
+            ],
+            "capabilities": {
+                "publishable": {
+                    "enabled": True
+                }
+            }
+        }
+    }
+    
+    # Faz a requisição API
+    response = requests.post(
+        API_URL,
+        headers=HEADERS,
+        json={"query": mutation, "variables": variables}
+    )
+    
+    data = response.json()
+    
+    # Verifica se houve erros
+    if "errors" in data or "userErrors" in data.get("data", {}).get("metaobjectDefinitionCreate", {}):
+        error_msg = data.get("errors", []) or data.get("data", {}).get("metaobjectDefinitionCreate", {}).get("userErrors", [])
+        print(f"Erro ao criar definição de metaobjeto: {json.dumps(error_msg, indent=2)}")
+        return False
+    
+    print("Definição de metaobjeto 'years' criada com sucesso!")
+    return True
+
 def process_all_years(start_year=1999, end_year=2025):
     """
     Process metaobject entries for all years in the specified range
     """
     results = []
+    
+    # Primeiro, cria a definição do metaobjeto se não existir
+    if not create_metaobject_definition():
+        print("Não foi possível criar a definição do metaobjeto. Encerrando...")
+        return []
+    
+    # Pequeno atraso para garantir que a definição esteja disponível
+    time.sleep(2)
     
     # Get all existing metaobjects first
     print("Fetching all existing metaobjects...")
